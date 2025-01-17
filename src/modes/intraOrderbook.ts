@@ -2,7 +2,7 @@ import { orderbookAbi } from "../abis";
 import { estimateGasCost } from "../gas";
 import { BigNumber, ethers } from "ethers";
 import { containsNodeError, errorSnapshot } from "../error";
-import { getWithdrawEnsureRainlang, parseRainlang } from "../task";
+// import { getWithdrawEnsureRainlang, parseRainlang } from "../task";
 import { BaseError, erc20Abi, ExecutionRevertedError, PublicClient } from "viem";
 import { estimateProfit, scale18, withBigintSerializer, extendSpanAttributes } from "../utils";
 import {
@@ -13,6 +13,7 @@ import {
     BundledOrders,
     TakeOrderDetails,
 } from "../types";
+import { getWithdrawEnsureBytecode } from "../task";
 
 /**
  * Executes a extimateGas call for an intra-orderbook tx (clear2()), to determine if the tx is successfull ot not
@@ -56,20 +57,16 @@ export async function dryrun({
         evaluable: {
             interpreter: config.dispair.interpreter,
             store: config.dispair.store,
-            bytecode: await parseRainlang(
-                await getWithdrawEnsureRainlang(
-                    signer.account.address,
-                    orderPairObject.buyToken,
-                    orderPairObject.sellToken,
-                    inputBalance,
-                    outputBalance,
-                    ethers.utils.parseUnits(inputToEthPrice),
-                    ethers.utils.parseUnits(outputToEthPrice),
-                    ethers.constants.Zero,
-                    signer.account.address,
-                ),
-                config.viemClient,
-                config.dispair,
+            bytecode: getWithdrawEnsureBytecode(
+                signer.account.address,
+                orderPairObject.buyToken,
+                orderPairObject.sellToken,
+                inputBalance,
+                outputBalance,
+                ethers.utils.parseUnits(inputToEthPrice),
+                ethers.utils.parseUnits(outputToEthPrice),
+                ethers.constants.Zero,
+                signer.account.address,
             ),
         },
         signedContext: [],
@@ -146,20 +143,16 @@ export async function dryrun({
     // sender output which is already called above
     if (config.gasCoveragePercentage !== "0") {
         const headroom = (Number(config.gasCoveragePercentage) * 1.03).toFixed();
-        task.evaluable.bytecode = await parseRainlang(
-            await getWithdrawEnsureRainlang(
-                signer.account.address,
-                orderPairObject.buyToken,
-                orderPairObject.sellToken,
-                inputBalance,
-                outputBalance,
-                ethers.utils.parseUnits(inputToEthPrice),
-                ethers.utils.parseUnits(outputToEthPrice),
-                gasCost.mul(headroom).div("100"),
-                signer.account.address,
-            ),
-            config.viemClient,
-            config.dispair,
+        task.evaluable.bytecode = getWithdrawEnsureBytecode(
+            signer.account.address,
+            orderPairObject.buyToken,
+            orderPairObject.sellToken,
+            inputBalance,
+            outputBalance,
+            ethers.utils.parseUnits(inputToEthPrice),
+            ethers.utils.parseUnits(outputToEthPrice),
+            gasCost.mul(headroom).div("100"),
+            signer.account.address,
         );
         withdrawOutputCalldata = obInterface.encodeFunctionData("withdraw2", [
             orderPairObject.sellToken,
@@ -190,20 +183,16 @@ export async function dryrun({
             }
             rawtx.gas = gasLimit.toBigInt();
             gasCost = gasLimit.mul(gasPrice).add(estimation.l1Cost);
-            task.evaluable.bytecode = await parseRainlang(
-                await getWithdrawEnsureRainlang(
-                    signer.account.address,
-                    orderPairObject.buyToken,
-                    orderPairObject.sellToken,
-                    inputBalance,
-                    outputBalance,
-                    ethers.utils.parseUnits(inputToEthPrice),
-                    ethers.utils.parseUnits(outputToEthPrice),
-                    gasCost.mul(config.gasCoveragePercentage).div("100"),
-                    signer.account.address,
-                ),
-                config.viemClient,
-                config.dispair,
+            task.evaluable.bytecode = getWithdrawEnsureBytecode(
+                signer.account.address,
+                orderPairObject.buyToken,
+                orderPairObject.sellToken,
+                inputBalance,
+                outputBalance,
+                ethers.utils.parseUnits(inputToEthPrice),
+                ethers.utils.parseUnits(outputToEthPrice),
+                gasCost.mul(config.gasCoveragePercentage).div("100"),
+                signer.account.address,
             );
             withdrawOutputCalldata = obInterface.encodeFunctionData("withdraw2", [
                 orderPairObject.sellToken,

@@ -3,7 +3,8 @@ import { estimateGasCost } from "../gas";
 import { ChainId, DataFetcher, Router } from "sushi";
 import { BigNumber, Contract, ethers } from "ethers";
 import { containsNodeError, errorSnapshot } from "../error";
-import { getBountyEnsureRainlang, parseRainlang } from "../task";
+// import { getBountyEnsureRainlang, parseRainlang } from "../task";
+
 import { BaseError, ExecutionRevertedError, PublicClient } from "viem";
 import { SpanAttrs, BotConfig, ViemClient, DryrunResult, BundledOrders } from "../types";
 import {
@@ -16,6 +17,7 @@ import {
     withBigintSerializer,
     extendSpanAttributes,
 } from "../utils";
+import { getBountyEnsureBytecode } from "../task";
 
 /**
  * Specifies the reason that dryrun failed
@@ -155,15 +157,11 @@ export async function dryrun({
                 bytecode:
                     config.gasCoveragePercentage === "0"
                         ? "0x"
-                        : await parseRainlang(
-                              await getBountyEnsureRainlang(
-                                  ethers.utils.parseUnits(ethPrice),
-                                  ethers.constants.Zero,
-                                  ethers.constants.Zero,
-                                  signer.account.address,
-                              ),
-                              config.viemClient,
-                              config.dispair,
+                        : getBountyEnsureBytecode(
+                              ethers.utils.parseUnits(ethPrice),
+                              ethers.constants.Zero,
+                              ethers.constants.Zero,
+                              signer.account.address,
                           ),
             },
             signedContext: [],
@@ -219,15 +217,11 @@ export async function dryrun({
         // sender output which is already called above
         if (config.gasCoveragePercentage !== "0") {
             const headroom = (Number(config.gasCoveragePercentage) * 1.03).toFixed();
-            task.evaluable.bytecode = await parseRainlang(
-                await getBountyEnsureRainlang(
-                    ethers.utils.parseUnits(ethPrice),
-                    ethers.constants.Zero,
-                    gasCost.mul(headroom).div("100"),
-                    signer.account.address,
-                ),
-                config.viemClient,
-                config.dispair,
+            task.evaluable.bytecode = getBountyEnsureBytecode(
+                ethers.utils.parseUnits(ethPrice),
+                ethers.constants.Zero,
+                gasCost.mul(headroom).div("100"),
+                signer.account.address,
             );
             rawtx.data = arb.interface.encodeFunctionData("arb3", [
                 orderPairObject.orderbook,
@@ -254,15 +248,11 @@ export async function dryrun({
                 }
                 rawtx.gas = gasLimit.toBigInt();
                 gasCost = gasLimit.mul(gasPrice).add(estimation.l1Cost);
-                task.evaluable.bytecode = await parseRainlang(
-                    await getBountyEnsureRainlang(
-                        ethers.utils.parseUnits(ethPrice),
-                        ethers.constants.Zero,
-                        gasCost.mul(config.gasCoveragePercentage).div("100"),
-                        signer.account.address,
-                    ),
-                    config.viemClient,
-                    config.dispair,
+                task.evaluable.bytecode = getBountyEnsureBytecode(
+                    ethers.utils.parseUnits(ethPrice),
+                    ethers.constants.Zero,
+                    gasCost.mul(config.gasCoveragePercentage).div("100"),
+                    signer.account.address,
                 );
                 rawtx.data = arb.interface.encodeFunctionData("arb3", [
                     orderPairObject.orderbook,
