@@ -1,6 +1,6 @@
 import { ChainId } from "sushi";
 import { findOpp } from "./modes";
-import { getQuoteGas } from "./gas";
+import { getGasPrice, getQuoteGas } from "./gas";
 import { PublicClient } from "viem";
 import { Token } from "sushi/currency";
 import { createViemClient } from "./config";
@@ -450,7 +450,6 @@ export async function processPair(args: {
             sellToken: orderPairObject.sellToken,
         },
     };
-    const gasPrice = ethers.BigNumber.from(state.gasPrice);
 
     spanAttributes["details.orders"] = orderPairObject.takeOrders.map((v) => v.id);
     spanAttributes["details.pair"] = pair;
@@ -498,6 +497,9 @@ export async function processPair(args: {
         maxOutput: ethers.utils.formatUnits(orderPairObject.takeOrders[0].quote!.maxOutput),
         ratio: ethers.utils.formatUnits(orderPairObject.takeOrders[0].quote!.ratio),
     });
+
+    await getGasPrice(config, state);
+    const gasPrice = ethers.BigNumber.from(state.gasPrice);
 
     // get pool details
     if (

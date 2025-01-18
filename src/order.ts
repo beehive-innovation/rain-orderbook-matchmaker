@@ -1,22 +1,18 @@
+import { OrderV3 } from "./abis";
 import { SgOrder } from "./query";
 import { Span } from "@opentelemetry/api";
 import { hexlify } from "ethers/lib/utils";
 import { addWatchedToken } from "./account";
-import { orderbookAbi, OrderV3 } from "./abis";
 import { getTokenSymbol, shuffleArray } from "./utils";
-import { decodeAbiParameters, erc20Abi, parseAbi, parseAbiParameters } from "viem";
+import { decodeAbiParameters, parseAbiParameters } from "viem";
 import {
     Pair,
     Order,
-    Vault,
-    OTOVMap,
     ViemClient,
-    OwnersVaults,
     TokenDetails,
     BundledOrders,
     OrdersProfileMap,
     OwnersProfileMap,
-    TokensOwnersVaults,
     OrderbooksOwnersProfileMap,
 } from "./types";
 
@@ -51,7 +47,6 @@ export function toOrder(orderLog: any): Order {
  * Get all pairs of an order
  */
 export async function getOrderPairs(
-    orderHash: string,
     orderStruct: Order,
     viemClient: ViemClient,
     tokens: TokenDetails[],
@@ -117,13 +112,10 @@ export async function getOrderPairs(
                     sellTokenSymbol: _outputSymbol,
                     sellTokenDecimals: _output.decimals,
                     takeOrder: {
-                        id: orderHash,
-                        takeOrder: {
-                            order: orderStruct,
-                            inputIOIndex: k,
-                            outputIOIndex: j,
-                            signedContext: [],
-                        },
+                        order: orderStruct,
+                        inputIOIndex: k,
+                        outputIOIndex: j,
+                        signedContext: [],
                     },
                 });
         }
@@ -145,7 +137,6 @@ export async function handleAddOrderbookOwnersProfileMap(
     const changes: Record<string, string[]> = {};
     for (let i = 0; i < ordersDetails.length; i++) {
         const orderDetails = ordersDetails[i];
-        const orderHash = orderDetails.orderHash.toLowerCase();
         const orderbook = orderDetails.orderbook.id.toLowerCase();
         const orderStruct = toOrder(
             decodeAbiParameters(
@@ -163,13 +154,12 @@ export async function handleAddOrderbookOwnersProfileMap(
         if (orderbookOwnerProfileItem) {
             const ownerProfile = orderbookOwnerProfileItem.get(orderStruct.owner.toLowerCase());
             if (ownerProfile) {
-                const order = ownerProfile.orders.get(orderHash);
+                const order = ownerProfile.orders.get(orderDetails.orderHash.toLowerCase());
                 if (!order) {
-                    ownerProfile.orders.set(orderHash, {
+                    ownerProfile.orders.set(orderDetails.orderHash.toLowerCase(), {
                         active: true,
                         order: orderStruct,
                         takeOrders: await getOrderPairs(
-                            orderHash,
                             orderStruct,
                             viemClient,
                             tokens,
@@ -182,16 +172,10 @@ export async function handleAddOrderbookOwnersProfileMap(
                 }
             } else {
                 const ordersProfileMap: OrdersProfileMap = new Map();
-                ordersProfileMap.set(orderHash, {
+                ordersProfileMap.set(orderDetails.orderHash.toLowerCase(), {
                     active: true,
                     order: orderStruct,
-                    takeOrders: await getOrderPairs(
-                        orderHash,
-                        orderStruct,
-                        viemClient,
-                        tokens,
-                        orderDetails,
-                    ),
+                    takeOrders: await getOrderPairs(orderStruct, viemClient, tokens, orderDetails),
                     consumedTakeOrders: [],
                 });
                 orderbookOwnerProfileItem.set(orderStruct.owner.toLowerCase(), {
@@ -201,16 +185,10 @@ export async function handleAddOrderbookOwnersProfileMap(
             }
         } else {
             const ordersProfileMap: OrdersProfileMap = new Map();
-            ordersProfileMap.set(orderHash, {
+            ordersProfileMap.set(orderDetails.orderHash.toLowerCase(), {
                 active: true,
                 order: orderStruct,
-                takeOrders: await getOrderPairs(
-                    orderHash,
-                    orderStruct,
-                    viemClient,
-                    tokens,
-                    orderDetails,
-                ),
+                takeOrders: await getOrderPairs(orderStruct, viemClient, tokens, orderDetails),
                 consumedTakeOrders: [],
             });
             const ownerProfileMap: OwnersProfileMap = new Map();
@@ -381,7 +359,10 @@ function gatherPairs(
             if (
                 !bundleOrder.takeOrders.find((v) => v.id.toLowerCase() === orderHash.toLowerCase())
             ) {
-                bundleOrder.takeOrders.push(pair.takeOrder);
+                bundleOrder.takeOrders.push({
+                    id: orderHash,
+                    takeOrder: pair.takeOrder,
+                });
             }
         } else {
             bundledOrders.push({
@@ -392,217 +373,222 @@ function gatherPairs(
                 sellToken: pair.sellToken,
                 sellTokenDecimals: pair.sellTokenDecimals,
                 sellTokenSymbol: pair.sellTokenSymbol,
-                takeOrders: [pair.takeOrder],
+                takeOrders: [
+                    {
+                        id: orderHash,
+                        takeOrder: pair.takeOrder,
+                    },
+                ],
             });
         }
     }
 }
 
-/**
- * Builds a map with following form from an `OrderbooksOwnersProfileMap` instance:
- * `orderbook -> token -> owner -> vaults` called `OTOVMap`
- * This is later on used to evaluate the owners limits
- */
-export function buildOtovMap(orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap): OTOVMap {
-    const result: OTOVMap = new Map();
-    orderbooksOwnersProfileMap.forEach((ownersProfileMap, orderbook) => {
-        const tokensOwnersVaults: TokensOwnersVaults = new Map();
-        ownersProfileMap.forEach((ownerProfile, owner) => {
-            ownerProfile.orders.forEach((orderProfile) => {
-                orderProfile.takeOrders.forEach((pair) => {
-                    const token = pair.sellToken.toLowerCase();
-                    const vaultId =
-                        pair.takeOrder.takeOrder.order.validOutputs[
-                            pair.takeOrder.takeOrder.outputIOIndex
-                        ].vaultId.toLowerCase();
-                    const ownersVaults = tokensOwnersVaults.get(token);
-                    if (ownersVaults) {
-                        const vaults = ownersVaults.get(owner.toLowerCase());
-                        if (vaults) {
-                            if (!vaults.find((v) => v.vaultId === vaultId))
-                                vaults.push({ vaultId, balance: 0n });
-                        } else {
-                            ownersVaults.set(owner.toLowerCase(), [{ vaultId, balance: 0n }]);
-                        }
-                    } else {
-                        const newOwnersVaults: OwnersVaults = new Map();
-                        newOwnersVaults.set(owner.toLowerCase(), [{ vaultId, balance: 0n }]);
-                        tokensOwnersVaults.set(token, newOwnersVaults);
-                    }
-                });
-            });
-        });
-        result.set(orderbook, tokensOwnersVaults);
-    });
-    return result;
-}
+// /**
+//  * Builds a map with following form from an `OrderbooksOwnersProfileMap` instance:
+//  * `orderbook -> token -> owner -> vaults` called `OTOVMap`
+//  * This is later on used to evaluate the owners limits
+//  */
+// export function buildOtovMap(orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap): OTOVMap {
+//     const result: OTOVMap = new Map();
+//     orderbooksOwnersProfileMap.forEach((ownersProfileMap, orderbook) => {
+//         const tokensOwnersVaults: TokensOwnersVaults = new Map();
+//         ownersProfileMap.forEach((ownerProfile, owner) => {
+//             ownerProfile.orders.forEach((orderProfile) => {
+//                 orderProfile.takeOrders.forEach((pair) => {
+//                     const token = pair.sellToken.toLowerCase();
+//                     const vaultId =
+//                         pair.takeOrder.takeOrder.order.validOutputs[
+//                             pair.takeOrder.takeOrder.outputIOIndex
+//                         ].vaultId.toLowerCase();
+//                     const ownersVaults = tokensOwnersVaults.get(token);
+//                     if (ownersVaults) {
+//                         const vaults = ownersVaults.get(owner.toLowerCase());
+//                         if (vaults) {
+//                             if (!vaults.find((v) => v.vaultId === vaultId))
+//                                 vaults.push({ vaultId, balance: 0n });
+//                         } else {
+//                             ownersVaults.set(owner.toLowerCase(), [{ vaultId, balance: 0n }]);
+//                         }
+//                     } else {
+//                         const newOwnersVaults: OwnersVaults = new Map();
+//                         newOwnersVaults.set(owner.toLowerCase(), [{ vaultId, balance: 0n }]);
+//                         tokensOwnersVaults.set(token, newOwnersVaults);
+//                     }
+//                 });
+//             });
+//         });
+//         result.set(orderbook, tokensOwnersVaults);
+//     });
+//     return result;
+// }
 
-/**
- * Gets vault balances of an owner's vaults of a given token
- */
-export async function fetchVaultBalances(
-    orderbook: string,
-    token: string,
-    owner: string,
-    vaults: Vault[],
-    viemClient: ViemClient,
-    multicallAddressOverride?: string,
-) {
-    const multicallResult = await viemClient.multicall({
-        multicallAddress:
-            (multicallAddressOverride as `0x${string}` | undefined) ??
-            viemClient.chain?.contracts?.multicall3?.address,
-        allowFailure: false,
-        contracts: vaults.map((v) => ({
-            address: orderbook as `0x${string}`,
-            allowFailure: false,
-            chainId: viemClient.chain!.id,
-            abi: parseAbi([orderbookAbi[3]]),
-            functionName: "vaultBalance",
-            args: [owner, token, v.vaultId],
-        })),
-    });
+// /**
+//  * Gets vault balances of an owner's vaults of a given token
+//  */
+// export async function fetchVaultBalances(
+//     orderbook: string,
+//     token: string,
+//     owner: string,
+//     vaults: Vault[],
+//     viemClient: ViemClient,
+//     multicallAddressOverride?: string,
+// ) {
+//     const multicallResult = await viemClient.multicall({
+//         multicallAddress:
+//             (multicallAddressOverride as `0x${string}` | undefined) ??
+//             viemClient.chain?.contracts?.multicall3?.address,
+//         allowFailure: false,
+//         contracts: vaults.map((v) => ({
+//             address: orderbook as `0x${string}`,
+//             allowFailure: false,
+//             chainId: viemClient.chain!.id,
+//             abi: parseAbi([orderbookAbi[3]]),
+//             functionName: "vaultBalance",
+//             args: [owner, token, v.vaultId],
+//         })),
+//     });
 
-    for (let i = 0; i < multicallResult.length; i++) {
-        vaults[i].balance = multicallResult[i];
-    }
-}
+//     for (let i = 0; i < multicallResult.length; i++) {
+//         vaults[i].balance = multicallResult[i];
+//     }
+// }
 
-/**
- * Evaluates the owners limits by checking an owner vaults avg balances of a token against
- * other owners total balances of that token to calculate a percentage, repeats the same
- * process for every other token and owner and at the end ends up with map of owners with array
- * of percentages, then calculates an avg of all those percenatges and that is applied as a divider
- * factor to the owner's limit.
- * This ensures that if an owner has many orders/vaults and has spread their balances across those
- * many vaults and orders, he/she will get limited.
- * Owners limits that are set by bot's admin as env or cli arg, are exluded from this evaluation process
- */
-export async function evaluateOwnersLimits(
-    orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap,
-    otovMap: OTOVMap,
-    viemClient: ViemClient,
-    ownerLimits?: Record<string, number>,
-    multicallAddressOverride?: string,
-) {
-    for (const [orderbook, tokensOwnersVaults] of otovMap) {
-        const ownersProfileMap = orderbooksOwnersProfileMap.get(orderbook);
-        if (ownersProfileMap) {
-            const ownersCuts: Map<string, number[]> = new Map();
-            for (const [token, ownersVaults] of tokensOwnersVaults) {
-                const obTokenBalance = await viemClient.readContract({
-                    address: token as `0x${string}`,
-                    abi: erc20Abi,
-                    functionName: "balanceOf",
-                    args: [orderbook as `0x${string}`],
-                });
-                for (const [owner, vaults] of ownersVaults) {
-                    // skip if owner limit is set by bot admin
-                    if (typeof ownerLimits?.[owner.toLowerCase()] === "number") continue;
+// /**
+//  * Evaluates the owners limits by checking an owner vaults avg balances of a token against
+//  * other owners total balances of that token to calculate a percentage, repeats the same
+//  * process for every other token and owner and at the end ends up with map of owners with array
+//  * of percentages, then calculates an avg of all those percenatges and that is applied as a divider
+//  * factor to the owner's limit.
+//  * This ensures that if an owner has many orders/vaults and has spread their balances across those
+//  * many vaults and orders, he/she will get limited.
+//  * Owners limits that are set by bot's admin as env or cli arg, are exluded from this evaluation process
+//  */
+// export async function evaluateOwnersLimits(
+//     orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap,
+//     otovMap: OTOVMap,
+//     viemClient: ViemClient,
+//     ownerLimits?: Record<string, number>,
+//     multicallAddressOverride?: string,
+// ) {
+//     for (const [orderbook, tokensOwnersVaults] of otovMap) {
+//         const ownersProfileMap = orderbooksOwnersProfileMap.get(orderbook);
+//         if (ownersProfileMap) {
+//             const ownersCuts: Map<string, number[]> = new Map();
+//             for (const [token, ownersVaults] of tokensOwnersVaults) {
+//                 const obTokenBalance = await viemClient.readContract({
+//                     address: token as `0x${string}`,
+//                     abi: erc20Abi,
+//                     functionName: "balanceOf",
+//                     args: [orderbook as `0x${string}`],
+//                 });
+//                 for (const [owner, vaults] of ownersVaults) {
+//                     // skip if owner limit is set by bot admin
+//                     if (typeof ownerLimits?.[owner.toLowerCase()] === "number") continue;
 
-                    const ownerProfile = ownersProfileMap.get(owner);
-                    if (ownerProfile) {
-                        await fetchVaultBalances(
-                            orderbook,
-                            token,
-                            owner,
-                            vaults,
-                            viemClient,
-                            multicallAddressOverride,
-                        );
-                        const ownerTotalBalance = vaults.reduce(
-                            (a, b) => ({
-                                balance: a.balance + b.balance,
-                            }),
-                            {
-                                balance: 0n,
-                            },
-                        ).balance;
-                        const avgBalance = ownerTotalBalance / BigInt(vaults.length);
-                        const otherOwnersBalances = obTokenBalance - ownerTotalBalance;
-                        const balanceRatioPercent =
-                            otherOwnersBalances === 0n
-                                ? 100n
-                                : (avgBalance * 100n) / otherOwnersBalances;
+//                     const ownerProfile = ownersProfileMap.get(owner);
+//                     if (ownerProfile) {
+//                         await fetchVaultBalances(
+//                             orderbook,
+//                             token,
+//                             owner,
+//                             vaults,
+//                             viemClient,
+//                             multicallAddressOverride,
+//                         );
+//                         const ownerTotalBalance = vaults.reduce(
+//                             (a, b) => ({
+//                                 balance: a.balance + b.balance,
+//                             }),
+//                             {
+//                                 balance: 0n,
+//                             },
+//                         ).balance;
+//                         const avgBalance = ownerTotalBalance / BigInt(vaults.length);
+//                         const otherOwnersBalances = obTokenBalance - ownerTotalBalance;
+//                         const balanceRatioPercent =
+//                             otherOwnersBalances === 0n
+//                                 ? 100n
+//                                 : (avgBalance * 100n) / otherOwnersBalances;
 
-                        // divide into 4 segments
-                        let ownerEvalDivideFactor = 1;
-                        if (balanceRatioPercent >= 75n) {
-                            ownerEvalDivideFactor = 1;
-                        } else if (balanceRatioPercent >= 50n && balanceRatioPercent < 75n) {
-                            ownerEvalDivideFactor = 2;
-                        } else if (balanceRatioPercent >= 25n && balanceRatioPercent < 50n) {
-                            ownerEvalDivideFactor = 3;
-                        } else if (balanceRatioPercent > 0n && balanceRatioPercent < 25n) {
-                            ownerEvalDivideFactor = 4;
-                        }
+//                         // divide into 4 segments
+//                         let ownerEvalDivideFactor = 1;
+//                         if (balanceRatioPercent >= 75n) {
+//                             ownerEvalDivideFactor = 1;
+//                         } else if (balanceRatioPercent >= 50n && balanceRatioPercent < 75n) {
+//                             ownerEvalDivideFactor = 2;
+//                         } else if (balanceRatioPercent >= 25n && balanceRatioPercent < 50n) {
+//                             ownerEvalDivideFactor = 3;
+//                         } else if (balanceRatioPercent > 0n && balanceRatioPercent < 25n) {
+//                             ownerEvalDivideFactor = 4;
+//                         }
 
-                        // gather owner divide factor for all of the owner's orders' tokens
-                        // to calculate an avg from them all later on
-                        const cuts = ownersCuts.get(owner.toLowerCase());
-                        if (cuts) {
-                            cuts.push(ownerEvalDivideFactor);
-                        } else {
-                            ownersCuts.set(owner.toLowerCase(), [ownerEvalDivideFactor]);
-                        }
-                    }
-                }
-            }
+//                         // gather owner divide factor for all of the owner's orders' tokens
+//                         // to calculate an avg from them all later on
+//                         const cuts = ownersCuts.get(owner.toLowerCase());
+//                         if (cuts) {
+//                             cuts.push(ownerEvalDivideFactor);
+//                         } else {
+//                             ownersCuts.set(owner.toLowerCase(), [ownerEvalDivideFactor]);
+//                         }
+//                     }
+//                 }
+//             }
 
-            ownersProfileMap.forEach((ownerProfile, owner) => {
-                const cuts = ownersCuts.get(owner);
-                if (cuts?.length) {
-                    const avgCut = cuts.reduce((a, b) => a + b, 0) / cuts.length;
-                    // round to nearest int, if turned out 0, set it to 1 as minimum
-                    ownerProfile.limit = Math.round(ownerProfile.limit / avgCut);
-                    if (ownerProfile.limit === 0) ownerProfile.limit = 1;
-                }
-            });
-        }
-    }
-}
+//             ownersProfileMap.forEach((ownerProfile, owner) => {
+//                 const cuts = ownersCuts.get(owner);
+//                 if (cuts?.length) {
+//                     const avgCut = cuts.reduce((a, b) => a + b, 0) / cuts.length;
+//                     // round to nearest int, if turned out 0, set it to 1 as minimum
+//                     ownerProfile.limit = Math.round(ownerProfile.limit / avgCut);
+//                     if (ownerProfile.limit === 0) ownerProfile.limit = 1;
+//                 }
+//             });
+//         }
+//     }
+// }
 
-/**
- * This is a wrapper fn around evaluating owers limits.
- * Provides a protection by evaluating and possibly reducing owner's limit,
- * this takes place by checking an owners avg vault balance of a token against
- * all other owners cumulative balances, the calculated ratio is used a reducing
- * factor for the owner limit when averaged out for all of tokens the owner has
- */
-export async function downscaleProtection(
-    orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap,
-    viemClient: ViemClient,
-    ownerLimits?: Record<string, number>,
-    reset = true,
-    multicallAddressOverride?: string,
-) {
-    if (reset) {
-        resetLimits(orderbooksOwnersProfileMap, ownerLimits);
-    }
-    const otovMap = buildOtovMap(orderbooksOwnersProfileMap);
-    await evaluateOwnersLimits(
-        orderbooksOwnersProfileMap,
-        otovMap,
-        viemClient,
-        ownerLimits,
-        multicallAddressOverride,
-    );
-}
+// /**
+//  * This is a wrapper fn around evaluating owers limits.
+//  * Provides a protection by evaluating and possibly reducing owner's limit,
+//  * this takes place by checking an owners avg vault balance of a token against
+//  * all other owners cumulative balances, the calculated ratio is used a reducing
+//  * factor for the owner limit when averaged out for all of tokens the owner has
+//  */
+// export async function downscaleProtection(
+//     orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap,
+//     viemClient: ViemClient,
+//     ownerLimits?: Record<string, number>,
+//     reset = true,
+//     multicallAddressOverride?: string,
+// ) {
+//     if (reset) {
+//         resetLimits(orderbooksOwnersProfileMap, ownerLimits);
+//     }
+//     const otovMap = buildOtovMap(orderbooksOwnersProfileMap);
+//     await evaluateOwnersLimits(
+//         orderbooksOwnersProfileMap,
+//         otovMap,
+//         viemClient,
+//         ownerLimits,
+//         multicallAddressOverride,
+//     );
+// }
 
-/**
- * Resets owners limit to default value
- */
-export async function resetLimits(
-    orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap,
-    ownerLimits?: Record<string, number>,
-) {
-    orderbooksOwnersProfileMap.forEach((ownersProfileMap) => {
-        if (ownersProfileMap) {
-            ownersProfileMap.forEach((ownerProfile, owner) => {
-                // skip if owner limit is set by bot admin
-                if (typeof ownerLimits?.[owner.toLowerCase()] === "number") return;
-                ownerProfile.limit = DEFAULT_OWNER_LIMIT;
-            });
-        }
-    });
-}
+// /**
+//  * Resets owners limit to default value
+//  */
+// export async function resetLimits(
+//     orderbooksOwnersProfileMap: OrderbooksOwnersProfileMap,
+//     ownerLimits?: Record<string, number>,
+// ) {
+//     orderbooksOwnersProfileMap.forEach((ownersProfileMap) => {
+//         if (ownersProfileMap) {
+//             ownersProfileMap.forEach((ownerProfile, owner) => {
+//                 // skip if owner limit is set by bot admin
+//                 if (typeof ownerLimits?.[owner.toLowerCase()] === "number") return;
+//                 ownerProfile.limit = DEFAULT_OWNER_LIMIT;
+//             });
+//         }
+//     });
+// }

@@ -117,7 +117,7 @@ export type Pair = {
     sellToken: string;
     sellTokenDecimals: number;
     sellTokenSymbol: string;
-    takeOrder: TakeOrderDetails;
+    takeOrder: TakeOrder;
 };
 export type OrderProfile = {
     active: boolean;
