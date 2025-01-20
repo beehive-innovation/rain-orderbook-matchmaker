@@ -2,8 +2,9 @@ import axios from "axios";
 import { ethers } from "ethers";
 import { ChainId } from "sushi";
 import { versions } from "process";
-import { parseAbi, PublicClient } from "viem";
+import { PublicClient } from "viem";
 import { processLps } from "./utils";
+import { DeployerAbi } from "./abis";
 import { initAccounts } from "./account";
 import { processOrders } from "./processOrders";
 import { Context, Span } from "@opentelemetry/api";
@@ -26,7 +27,6 @@ import {
     onFetchResponse,
     createViemClient,
 } from "./config";
-import { deployerAbi } from "./abis";
 
 /**
  * Get the order details from a source, i.e array of subgraphs and/or a local json file
@@ -201,7 +201,7 @@ export async function getConfig(
         try {
             return await viemClient.readContract({
                 address: options.dispair as `0x${string}`,
-                abi: parseAbi(deployerAbi),
+                abi: DeployerAbi,
                 functionName: "iInterpreter",
             });
         } catch {
@@ -212,7 +212,7 @@ export async function getConfig(
         try {
             return await viemClient.readContract({
                 address: options.dispair as `0x${string}`,
-                abi: parseAbi(deployerAbi),
+                abi: DeployerAbi,
                 functionName: "iStore",
             });
         } catch {

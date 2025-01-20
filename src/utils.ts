@@ -1,16 +1,13 @@
-import { SgOrder } from "./query";
+import { orderbookAbi } from "./abis";
 import { ChainId } from "sushi/chain";
 import { RouteLeg } from "sushi/tines";
-import { getDataFetcher } from "./config";
 import { Token, Type } from "sushi/currency";
 import BlackList from "./pool-blacklist.json";
+import { erc20Abi, TransactionReceipt } from "viem";
 import { isBytes, isHexString } from "ethers/lib/utils";
 import { BigNumber, BigNumberish, ethers } from "ethers";
-import { erc20Abi, orderbookAbi, OrderV3 } from "./abis";
-import { parseAbi, PublicClient, TransactionReceipt } from "viem";
-import { doQuoteTargets, QuoteTarget } from "@rainlanguage/orderbook/quote";
+import { BotConfig, TakeOrder, TokenDetails, ViemClient } from "./types";
 import { DataFetcher, DataFetcherOptions, LiquidityProviders, Router } from "sushi/router";
-import { BotConfig, BundledOrders, OwnedOrder, TakeOrder, TokenDetails, ViemClient } from "./types";
 
 /**
  * One ether which equals to 1e18
@@ -176,7 +173,7 @@ export const getEthPrice = async (
     targetTokenAddress: string,
     targetTokenDecimals: number,
     gasPrice: BigNumber,
-    dataFetcher?: DataFetcher,
+    dataFetcher: DataFetcher,
     options?: DataFetcherOptions,
     fetchPools = true,
 ): Promise<string | undefined> => {
@@ -195,7 +192,6 @@ export const getEthPrice = async (
         decimals: targetTokenDecimals,
         address: targetTokenAddress,
     });
-    if (!dataFetcher) dataFetcher = await getDataFetcher(config);
     if (fetchPools)
         await dataFetcher.fetchPoolsForToken(fromToken, toToken, PoolBlackList, options);
     const pcMap = dataFetcher.getCurrentPoolCodeMap(fromToken, toToken);
@@ -395,99 +391,6 @@ export const promiseTimeout = async (
 };
 
 /**
- * Gets the route for tokens
- * @param chainId - The network chain id
- * @param rpcs - The rpcs
- * @param sellAmount - The sell amount, should be in onchain token value
- * @param fromTokenAddress - The from token address
- * @param fromTokenDecimals - The from token decimals
- * @param toTokenAddress - The to token address
- * @param toTokenDecimals - The to token decimals
- * @param receiverAddress - The address of the receiver
- * @param routeProcessorAddress - The address of the RouteProcessor contract
- * @param abiencoded - If the result should be abi encoded or not
- */
-export const getRouteForTokens = async (
-    chainId: number,
-    rpcs: string[],
-    sellAmount: BigNumber,
-    fromTokenAddress: string,
-    fromTokenDecimals: number,
-    toTokenAddress: string,
-    toTokenDecimals: number,
-    receiverAddress: string,
-    routeProcessorAddress: string,
-    abiEncoded = false,
-) => {
-    const amountIn = sellAmount.toBigInt();
-    const fromToken = new Token({
-        chainId: chainId,
-        decimals: fromTokenDecimals,
-        address: fromTokenAddress,
-    });
-    const toToken = new Token({
-        chainId: chainId,
-        decimals: toTokenDecimals,
-        address: toTokenAddress,
-    });
-    const dataFetcher = await getDataFetcher({
-        chain: { id: chainId },
-        rpc: rpcs,
-    } as any as PublicClient);
-    await dataFetcher.fetchPoolsForToken(fromToken, toToken);
-    const pcMap = dataFetcher.getCurrentPoolCodeMap(fromToken, toToken);
-    const route = Router.findBestRoute(
-        pcMap,
-        chainId as ChainId,
-        fromToken,
-        amountIn,
-        toToken,
-        Number(await dataFetcher.web3Client.getGasPrice()),
-        // providers,
-        // poolFilter
-    );
-    if (route.status == "NoWay") throw "NoWay";
-    else {
-        let routeText = "";
-        route.legs.forEach((v, i) => {
-            if (i === 0)
-                routeText =
-                    routeText +
-                    v.tokenTo.symbol +
-                    "/" +
-                    v.tokenFrom.symbol +
-                    "(" +
-                    (v as any).poolName +
-                    ")";
-            else
-                routeText =
-                    routeText +
-                    " + " +
-                    v.tokenTo.symbol +
-                    "/" +
-                    v.tokenFrom.symbol +
-                    "(" +
-                    (v as any).poolName +
-                    ")";
-        });
-        // eslint-disable-next-line no-console
-        console.log("Route portions: ", routeText, "\n");
-        const rpParams = Router.routeProcessor4Params(
-            pcMap,
-            route,
-            fromToken,
-            toToken,
-            receiverAddress as `0x${string}`,
-            routeProcessorAddress as `0x${string}`,
-            // permits
-            // "0.005"
-        );
-        if (abiEncoded) return ethers.utils.defaultAbiCoder.encode(["bytes"], [rpParams.routeCode]);
-        else return rpParams.routeCode;
-    }
-};
-
-/**
  * Method to visualize the routes, returns array of route strings sorted from highest to lowest percentage
  * @param fromToken - The from token address
  * @param toToken - The to token address
@@ -581,288 +484,6 @@ export const shuffleArray = (array: any[]) => {
 
     return array;
 };
-
-/**
- * Prepares an etherjs error for otel span consumption
- * @param error - The ethersjs error
- */
-export function getSpanException(error: any) {
-    if (
-        error instanceof Error &&
-        Object.keys(error).length &&
-        error.message.includes("providers/5.7.0")
-    ) {
-        const parsedError = JSON.parse(JSON.stringify(error));
-        error.message = JSON.stringify(parsedError);
-
-        // remove stack since it is already present in message
-        error.stack = undefined;
-        return error;
-    }
-    return error;
-}
-
-/**
- * Builds and bundles orders which their details are queried from a orderbook subgraph
- * @param ordersDetails - Orders details queried from subgraph
- * @param _shuffle - To shuffle the bundled order array at the end
- * @param _bundle = If orders should be bundled based on token pair
- * @returns Array of bundled take orders
- */
-export const bundleOrders = (
-    ordersDetails: any[],
-    _shuffle = true,
-    _bundle = true,
-): BundledOrders[][] => {
-    const bundledOrders: Record<string, BundledOrders[]> = {};
-    for (let i = 0; i < ordersDetails.length; i++) {
-        const orderDetails = ordersDetails[i];
-        const orderbook = orderDetails.orderbook.id;
-        const orderStruct = ethers.utils.defaultAbiCoder.decode(
-            [OrderV3],
-            orderDetails.orderBytes,
-        )[0];
-
-        for (let j = 0; j < orderStruct.validOutputs.length; j++) {
-            const _output = orderStruct.validOutputs[j];
-            const _outputSymbol = orderDetails.outputs.find(
-                (v: any) => v.token.address.toLowerCase() === _output.token.toLowerCase(),
-            ).token.symbol;
-
-            for (let k = 0; k < orderStruct.validInputs.length; k++) {
-                const _input = orderStruct.validInputs[k];
-                const _inputSymbol = orderDetails.inputs.find(
-                    (v: any) => v.token.address.toLowerCase() === _input.token.toLowerCase(),
-                ).token.symbol;
-
-                if (_output.token.toLowerCase() !== _input.token.toLowerCase()) {
-                    if (!bundledOrders[orderbook]) {
-                        bundledOrders[orderbook] = [];
-                    }
-                    const pair = bundledOrders[orderbook].find(
-                        (v) =>
-                            v.sellToken === _output.token.toLowerCase() &&
-                            v.buyToken === _input.token.toLowerCase(),
-                    );
-                    if (pair && _bundle)
-                        pair.takeOrders.push({
-                            id: orderDetails.orderHash,
-                            // active: true,
-                            takeOrder: {
-                                order: orderStruct,
-                                inputIOIndex: k,
-                                outputIOIndex: j,
-                                signedContext: [],
-                            },
-                        });
-                    else
-                        bundledOrders[orderbook].push({
-                            orderbook,
-                            buyToken: _input.token.toLowerCase(),
-                            buyTokenSymbol: _inputSymbol,
-                            buyTokenDecimals: _input.decimals,
-                            sellToken: _output.token.toLowerCase(),
-                            sellTokenSymbol: _outputSymbol,
-                            sellTokenDecimals: _output.decimals,
-                            takeOrders: [
-                                {
-                                    id: orderDetails.orderHash,
-                                    // active: true,
-                                    takeOrder: {
-                                        order: orderStruct,
-                                        inputIOIndex: k,
-                                        outputIOIndex: j,
-                                        signedContext: [],
-                                    },
-                                },
-                            ],
-                        });
-                }
-            }
-        }
-    }
-    if (_shuffle) {
-        // shuffle bundled orders pairs
-        if (_bundle) {
-            for (const ob in bundledOrders) {
-                shuffleArray(bundledOrders[ob]);
-            }
-        }
-
-        // shuffle orderbooks
-        const result = Object.values(bundledOrders);
-        shuffleArray(result);
-
-        return result;
-    }
-    return Object.values(bundledOrders);
-};
-
-/**
- * Gets vault balance of an order or combined value of vaults if bundled
- * @param orderDetails
- * @param orderbookAddress
- * @param viemClient
- * @param multicallAddressOverride
- */
-export async function getVaultBalance(
-    orderDetails: BundledOrders,
-    orderbookAddress: string,
-    viemClient: PublicClient,
-    multicallAddressOverride?: string,
-): Promise<BigNumber> {
-    const multicallResult = await viemClient.multicall({
-        multicallAddress:
-            (multicallAddressOverride as `0x${string}` | undefined) ??
-            viemClient.chain?.contracts?.multicall3?.address,
-        allowFailure: false,
-        contracts: orderDetails.takeOrders.map((v) => ({
-            address: orderbookAddress as `0x${string}`,
-            allowFailure: false,
-            chainId: viemClient.chain!.id,
-            abi: parseAbi([orderbookAbi[3]]),
-            functionName: "vaultBalance",
-            args: [
-                // owner
-                v.takeOrder.order.owner,
-                // token
-                v.takeOrder.order.validOutputs[v.takeOrder.outputIOIndex].token,
-                // valut id
-                v.takeOrder.order.validOutputs[v.takeOrder.outputIOIndex].vaultId,
-            ],
-        })),
-    });
-
-    let result = ethers.BigNumber.from(0);
-    for (let i = 0; i < multicallResult.length; i++) {
-        result = result.add(multicallResult[i]!);
-    }
-    return result;
-}
-
-/**
- * Quotes order details that are already fetched and bundled by bundleOrder()
- * @param orderDetails - Order details to quote
- * @param rpcs - RPC urls
- * @param blockNumber - Optional block number
- * @param multicallAddressOverride - Optional multicall address
- */
-export async function quoteOrders(
-    orderDetails: BundledOrders[][],
-    rpcs: string[],
-    blockNumber?: bigint,
-    gas?: bigint,
-    multicallAddressOverride?: string,
-): Promise<BundledOrders[][]> {
-    let quoteResults: any[] = [];
-    const targets = orderDetails.flatMap((v) =>
-        v.flatMap((list) =>
-            list.takeOrders.map((orderConfig) => ({
-                orderbook: list.orderbook,
-                quoteConfig: getQuoteConfig(orderConfig),
-            })),
-        ),
-    ) as any as QuoteTarget[];
-    for (let i = 0; i < rpcs.length; i++) {
-        const rpc = rpcs[i];
-        try {
-            quoteResults = await doQuoteTargets(
-                targets,
-                rpc,
-                blockNumber,
-                gas,
-                multicallAddressOverride,
-            );
-            break;
-        } catch (e) {
-            // throw only after every available rpc has been tried and failed
-            if (i === rpcs.length - 1) throw e;
-        }
-    }
-
-    // map results to the original obj
-    for (const orderbookOrders of orderDetails) {
-        for (const pair of orderbookOrders) {
-            for (const order of pair.takeOrders) {
-                const quoteResult = quoteResults.shift();
-                if (quoteResult) {
-                    if (typeof quoteResult !== "string") {
-                        order.quote = {
-                            maxOutput: ethers.BigNumber.from(quoteResult.maxOutput),
-                            ratio: ethers.BigNumber.from(quoteResult.ratio),
-                        };
-                    }
-                }
-            }
-        }
-    }
-
-    // filter out those that failed quote or have 0 maxoutput
-    for (let i = 0; i < orderDetails.length; i++) {
-        for (const pair of orderDetails[i]) {
-            pair.takeOrders = pair.takeOrders.filter((v) => v.quote && v.quote.maxOutput.gt(0));
-            if (pair.takeOrders.length) {
-                pair.takeOrders.sort((a, b) =>
-                    a.quote!.ratio.lt(b.quote!.ratio)
-                        ? -1
-                        : a.quote!.ratio.gt(b.quote!.ratio)
-                          ? 1
-                          : 0,
-                );
-            }
-        }
-        orderDetails[i] = orderDetails[i].filter((v) => v.takeOrders.length > 0);
-    }
-
-    return orderDetails;
-}
-
-/**
- * Quotes a single order
- * @param orderDetails - Order details to quote
- * @param rpcs - RPC urls
- * @param blockNumber - Optional block number
- * @param multicallAddressOverride - Optional multicall address
- */
-export async function quoteSingleOrder(
-    orderDetails: BundledOrders,
-    rpcs: string[],
-    blockNumber?: bigint,
-    gas?: bigint,
-    multicallAddressOverride?: string,
-) {
-    for (let i = 0; i < rpcs.length; i++) {
-        const rpc = rpcs[i];
-        try {
-            const quoteResult = (
-                await doQuoteTargets(
-                    [
-                        {
-                            orderbook: orderDetails.orderbook,
-                            quoteConfig: getQuoteConfig(orderDetails.takeOrders[0]),
-                        },
-                    ] as any as QuoteTarget[],
-                    rpc,
-                    blockNumber,
-                    gas,
-                    multicallAddressOverride,
-                )
-            )[0];
-            if (typeof quoteResult !== "string") {
-                orderDetails.takeOrders[0].quote = {
-                    maxOutput: ethers.BigNumber.from(quoteResult.maxOutput),
-                    ratio: ethers.BigNumber.from(quoteResult.ratio),
-                };
-                return;
-            } else {
-                return Promise.reject(`failed to quote order, reason: ${quoteResult}`);
-            }
-        } catch (e) {
-            // throw only after every available rpc has been tried and failed
-            if (i === rpcs.length - 1) throw (e as Error)?.message;
-        }
-    }
-}
 
 /**
  * Get a TakeOrder type consumable by orderbook Quote lib for quoting orders
@@ -1102,50 +723,6 @@ export const getRpSwap = async (
 };
 
 /**
- * Gets all distinct tokens of all the orders' IOs from a subgraph query,
- * used to to keep a cache of known tokens at runtime to not fetch their
- * details everytime with onchain calls
- */
-export function getOrdersTokens(ordersDetails: SgOrder[]): TokenDetails[] {
-    const tokens: TokenDetails[] = [];
-    for (let i = 0; i < ordersDetails.length; i++) {
-        const orderDetails = ordersDetails[i];
-        const orderStruct = ethers.utils.defaultAbiCoder.decode(
-            [OrderV3],
-            orderDetails.orderBytes,
-        )[0];
-
-        for (let j = 0; j < orderStruct.validOutputs.length; j++) {
-            const _output = orderStruct.validOutputs[j];
-            const _outputSymbol = orderDetails.outputs.find(
-                (v: any) => v.token.address.toLowerCase() === _output.token.toLowerCase(),
-            )?.token?.symbol;
-            if (!tokens.find((v) => v.address === _output.token.toLowerCase())) {
-                tokens.push({
-                    address: _output.token.toLowerCase(),
-                    decimals: _output.decimals,
-                    symbol: _outputSymbol ?? "UnknownSymbol",
-                });
-            }
-        }
-        for (let k = 0; k < orderStruct.validInputs.length; k++) {
-            const _input = orderStruct.validInputs[k];
-            const _inputSymbol = orderDetails.inputs.find(
-                (v: any) => v.token.address.toLowerCase() === _input.token.toLowerCase(),
-            )?.token?.symbol;
-            if (!tokens.find((v) => v.address === _input.token.toLowerCase())) {
-                tokens.push({
-                    address: _input.token.toLowerCase(),
-                    decimals: _input.decimals,
-                    symbol: _inputSymbol ?? "UnknownSymbol",
-                });
-            }
-        }
-    }
-    return tokens;
-}
-
-/**
  * Checks if a route exists between 2 tokens using sushi router
  */
 export async function routeExists(
@@ -1180,98 +757,6 @@ export function withBigintSerializer(_k: string, v: any) {
     } else {
         return v;
     }
-}
-
-/**
- * Quotes order details that are already fetched and bundled by bundleOrder()
- * @param config - Config obj
- * @param orderDetails - Order details to quote
- * @param multicallAddressOverride - Optional multicall address
- */
-export async function checkOwnedOrders(
-    config: BotConfig,
-    orderDetails: BundledOrders[][],
-    multicallAddressOverride?: string,
-): Promise<OwnedOrder[]> {
-    const ownedOrders: any[] = [];
-    const result: OwnedOrder[] = [];
-    orderDetails.flat().forEach((v) => {
-        v.takeOrders.forEach((order) => {
-            if (
-                order.takeOrder.order.owner.toLowerCase() ===
-                    config.mainAccount.account.address.toLowerCase() &&
-                !ownedOrders.find(
-                    (e) =>
-                        e.orderbook.toLowerCase() === v.orderbook.toLowerCase() &&
-                        e.outputToken.toLowerCase() === v.sellToken.toLowerCase() &&
-                        e.order.takeOrder.order.validOutputs[
-                            e.order.takeOrder.outputIOIndex
-                        ].token.toLowerCase() ==
-                            order.takeOrder.order.validOutputs[
-                                order.takeOrder.outputIOIndex
-                            ].token.toLowerCase() &&
-                        ethers.BigNumber.from(
-                            e.order.takeOrder.order.validOutputs[e.order.takeOrder.outputIOIndex]
-                                .vaultId,
-                        ).eq(
-                            order.takeOrder.order.validOutputs[order.takeOrder.outputIOIndex]
-                                .vaultId,
-                        ),
-                )
-            ) {
-                ownedOrders.push({
-                    order,
-                    orderbook: v.orderbook,
-                    outputSymbol: v.sellTokenSymbol,
-                    outputToken: v.sellToken,
-                    outputDecimals: v.sellTokenDecimals,
-                });
-            }
-        });
-    });
-    if (!ownedOrders.length) return result;
-    try {
-        const multicallResult = await config.viemClient.multicall({
-            multicallAddress:
-                (multicallAddressOverride as `0x${string}` | undefined) ??
-                config.viemClient.chain?.contracts?.multicall3?.address,
-            allowFailure: false,
-            contracts: ownedOrders.map((v) => ({
-                address: v.orderbook,
-                allowFailure: false,
-                chainId: config.chain.id,
-                abi: parseAbi([orderbookAbi[3]]),
-                functionName: "vaultBalance",
-                args: [
-                    // owner
-                    v.order.takeOrder.order.owner,
-                    // token
-                    v.order.takeOrder.order.validOutputs[v.order.takeOrder.outputIOIndex].token,
-                    // valut id
-                    v.order.takeOrder.order.validOutputs[v.order.takeOrder.outputIOIndex].vaultId,
-                ],
-            })),
-        });
-        for (let i = 0; i < multicallResult.length; i++) {
-            let vaultId =
-                ownedOrders[i].order.takeOrder.order.validOutputs[
-                    ownedOrders[i].order.takeOrder.outputIOIndex
-                ].vaultId;
-            if (vaultId instanceof BigNumber) vaultId = vaultId.toHexString();
-            result.push({
-                vaultId,
-                id: ownedOrders[i].order.id,
-                token: ownedOrders[i].outputToken,
-                symbol: ownedOrders[i].outputSymbol,
-                decimals: ownedOrders[i].outputDecimals,
-                orderbook: ownedOrders[i].orderbook,
-                vaultBalance: ethers.BigNumber.from(multicallResult[i]),
-            });
-        }
-    } catch (e) {
-        /**/
-    }
-    return result;
 }
 
 /**
@@ -1330,41 +815,6 @@ export function isBigNumberish(value: any): value is BigNumberish {
     );
 }
 
-/**
- * Get block number with retries, using viem client
- */
-export async function getBlockNumber(viemClient: ViemClient): Promise<bigint | undefined> {
-    for (let i = 0; i < 3; i++) {
-        try {
-            return await viemClient.getBlockNumber();
-        } catch (e) {
-            await sleep(5_000);
-        }
-    }
-    return;
-}
-
-/**
- * Get token symbol
- * @param address - The address of token
- * @param viemClient - The viem client
- */
-export async function getTokenSymbol(address: string, viemClient: ViemClient): Promise<string> {
-    // 3 retries
-    for (let i = 0; i < 3; i++) {
-        try {
-            return await viemClient.readContract({
-                address: address as `0x${string}`,
-                abi: parseAbi(erc20Abi),
-                functionName: "symbol",
-            });
-        } catch {
-            await sleep(5_000);
-        }
-    }
-    return "UnknownSymbol";
-}
-
 export function memory(msg: string) {
     // eslint-disable-next-line no-console
     console.log(msg);
@@ -1414,6 +864,24 @@ export function extendSpanAttributes(
             spanAttributes[header + "." + attrKey] = newAttributes[attrKey];
         } else {
             spanAttributes[attrKey] = newAttributes[attrKey];
+        }
+    }
+}
+
+/**
+ * Adds the given token details to the given list
+ */
+export function addWatchedToken(
+    token: TokenDetails,
+    watchedTokens: TokenDetails[],
+    account?: ViemClient,
+) {
+    if (!watchedTokens.find((v) => v.address.toLowerCase() === token.address.toLowerCase())) {
+        watchedTokens.push(token);
+    }
+    if (account) {
+        if (!account.BOUNTY.find((v) => v.address.toLowerCase() === token.address.toLowerCase())) {
+            account.BOUNTY.push(token);
         }
     }
 }

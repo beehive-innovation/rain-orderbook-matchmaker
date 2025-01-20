@@ -2,16 +2,13 @@ const { assert } = require("chai");
 const fixtures = require("./data");
 const mockServer = require("mockttp").getLocal();
 const { encodeQuoteResponse } = require("./utils");
+const { processPair } = require("../src/processOrders");
 const { clone, estimateProfit } = require("../src/utils");
+const { ProcessPairHaltReason, ProcessPairReportStatus } = require("../src/types");
 const {
     ethers,
     utils: { formatUnits },
 } = require("ethers");
-const {
-    processPair,
-    ProcessPairHaltReason,
-    ProcessPairReportStatus,
-} = require("../src/processOrders");
 
 describe("Test process pair", async function () {
     // mock dataFecther, ethers signer and viem client
