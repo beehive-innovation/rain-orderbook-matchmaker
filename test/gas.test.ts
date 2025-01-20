@@ -2,7 +2,7 @@ import { assert } from "chai";
 import { ChainId } from "sushi";
 import { orderPairObject1 } from "./data";
 import { OperationState, ViemClient } from "../src/types";
-import { estimateGasCost, getGasPrice, getL1Fee, getQuoteGas, getTxFee } from "../src/gas";
+import { estimateGasCost, getGasPrice, getL1Fee, getQuoteGas, getTxFee } from "../src/tx";
 
 describe("Test gas", async function () {
     it("should estimate gas correctly for L1 and L2 chains", async function () {

@@ -1,6 +1,6 @@
 import { ChainId, RPParams } from "sushi";
 import { BigNumber, ethers } from "ethers";
-import { estimateGasCost, getTxFee } from "./gas";
+import { estimateGasCost, getTxFee } from "./tx";
 import { ErrorSeverity, errorSnapshot } from "./error";
 import { Native, Token, WNATIVE } from "sushi/currency";
 import { ROUTE_PROCESSOR_4_ADDRESS } from "sushi/config";

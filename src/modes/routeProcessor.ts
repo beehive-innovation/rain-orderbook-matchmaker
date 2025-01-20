@@ -1,5 +1,5 @@
 import { Token } from "sushi/currency";
-import { estimateGasCost } from "../gas";
+import { estimateGasCost } from "../tx";
 import { ChainId, DataFetcher, Router } from "sushi";
 import { BigNumber, Contract, ethers } from "ethers";
 import { containsNodeError, errorSnapshot } from "../error";

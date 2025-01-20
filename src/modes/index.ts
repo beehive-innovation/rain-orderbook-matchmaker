@@ -150,6 +150,7 @@ export async function findOpp({
         ) {
             result.noneNodeError = (allResults[2] as any).reason.value.noneNodeError;
         }
+        result.spanAttributes = { attrs: JSON.stringify(spanAttributes) };
         throw result;
     }
 }

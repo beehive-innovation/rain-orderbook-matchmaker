@@ -5,6 +5,7 @@ import { Dispair, ViemClient } from "./types";
 import { parseAbi, PublicClient, stringToHex } from "viem";
 import { MetaStore, RainDocument } from "@rainlanguage/dotrain";
 
+export const metaStore = new MetaStore();
 export const TaskEntryPoint = ["main"] as const;
 export const EnsureBountyDotrain = fs.readFileSync("./tasks/ensure-bounty.rain", {
     encoding: "utf8",
@@ -29,7 +30,7 @@ export async function getBountyEnsureRainlang(
     return await RainDocument.composeText(
         EnsureBountyDotrain,
         TaskEntryPoint as any as string[],
-        new MetaStore(),
+        metaStore,
         [
             ["sender", sender],
             ["input-to-eth-price", utils.formatUnits(inputToEthPrice)],
@@ -65,7 +66,7 @@ export async function getWithdrawEnsureRainlang(
     return await RainDocument.composeText(
         WithdrawEnsureBountyDotrain,
         TaskEntryPoint as any as string[],
-        new MetaStore(),
+        metaStore,
         [
             ["sender", sender],
             ["bot-address", botAddress],
