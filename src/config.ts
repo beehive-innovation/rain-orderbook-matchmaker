@@ -32,6 +32,15 @@ import {
 } from "sushi/config";
 
 /**
+ * List of liquidity provider that are excluded
+ */
+export const ExcludedLiquidityProviders = [
+    LiquidityProviders.CurveSwap,
+    LiquidityProviders.Camelot,
+    LiquidityProviders.Trident,
+] as const;
+
+/**
  * Get the chain config for a given chain id
  * @param chainId - The chain id
  */
@@ -260,6 +269,30 @@ export async function getMetaInfo(config: BotConfig, sg: string[]): Promise<Reco
     } catch (e) {
         return {};
     }
+}
+
+/**
+ * Resolves an array of case-insensitive names to LiquidityProviders, ignores the ones that are not valid
+ * @param liquidityProviders - List of liquidity providers
+ */
+export function processLps(liquidityProviders?: string[]): LiquidityProviders[] {
+    const LP = Object.values(LiquidityProviders);
+    if (
+        !liquidityProviders ||
+        !Array.isArray(liquidityProviders) ||
+        !liquidityProviders.length ||
+        !liquidityProviders.every((v) => typeof v === "string")
+    ) {
+        return LP.filter((v) => !ExcludedLiquidityProviders.includes(v as any));
+    }
+    const lps: LiquidityProviders[] = [];
+    for (let i = 0; i < liquidityProviders.length; i++) {
+        const index = LP.findIndex(
+            (v) => v.toLowerCase() === liquidityProviders[i].toLowerCase().trim(),
+        );
+        if (index > -1 && !lps.includes(LP[index])) lps.push(LP[index]);
+    }
+    return lps.length ? lps : LP.filter((v) => !ExcludedLiquidityProviders.includes(v as any));
 }
 
 /**

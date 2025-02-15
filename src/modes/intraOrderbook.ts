@@ -1,11 +1,10 @@
-import { recordGasEstAttrs } from ".";
 import { orderbookAbi } from "../abis";
 import { estimateGasCost } from "../gas";
 import { BigNumber, ethers } from "ethers";
 import { containsNodeError, errorSnapshot } from "../error";
 import { getWithdrawEnsureRainlang, parseRainlang } from "../task";
-import { estimateProfit, scale18, withBigintSerializer } from "../utils";
 import { BaseError, erc20Abi, ExecutionRevertedError, PublicClient } from "viem";
+import { estimateProfit, scale18, withBigintSerializer, extendSpanAttributes } from "../utils";
 import {
     SpanAttrs,
     BotConfig,
@@ -14,6 +13,8 @@ import {
     BundledOrders,
     TakeOrderDetails,
 } from "../types";
+
+const obInterface = new ethers.utils.Interface(orderbookAbi);
 
 /**
  * Executes a extimateGas call for an intra-orderbook tx (clear2()), to determine if the tx is successfull ot not
@@ -52,7 +53,6 @@ export async function dryrun({
 
     const inputBountyVaultId = "1";
     const outputBountyVaultId = "1";
-    const obInterface = new ethers.utils.Interface(orderbookAbi);
     const task = {
         evaluable: {
             interpreter: config.dispair.interpreter,
@@ -120,7 +120,21 @@ export async function dryrun({
         gasLimit = ethers.BigNumber.from(estimation.gas).mul(config.gasLimitMultiplier).div(100);
 
         // include dryrun headroom gas estimation in otel logs
-        recordGasEstAttrs(spanAttributes, estimation, config, true);
+        extendSpanAttributes(
+            spanAttributes,
+            {
+                gasLimit: estimation.gas.toString(),
+                totalCost: estimation.totalGasCost.toString(),
+                gasPrice: estimation.gasPrice.toString(),
+                ...(config.isSpecialL2
+                    ? {
+                          l1Cost: estimation.l1Cost.toString(),
+                          l1GasPrice: estimation.l1GasPrice.toString(),
+                      }
+                    : {}),
+            },
+            "gasEst.headroom",
+        );
     } catch (e) {
         // reason, code, method, transaction, error, stack, message
         const isNodeError = containsNodeError(e as BaseError);
@@ -200,7 +214,21 @@ export async function dryrun({
             gasCost = gasLimit.mul(gasPrice).add(estimation.l1Cost);
 
             // include dryrun final gas estimation in otel logs
-            recordGasEstAttrs(spanAttributes, estimation, config, false);
+            extendSpanAttributes(
+                spanAttributes,
+                {
+                    gasLimit: estimation.gas.toString(),
+                    totalCost: estimation.totalGasCost.toString(),
+                    gasPrice: estimation.gasPrice.toString(),
+                    ...(config.isSpecialL2
+                        ? {
+                              l1Cost: estimation.l1Cost.toString(),
+                              l1GasPrice: estimation.l1GasPrice.toString(),
+                          }
+                        : {}),
+                },
+                "gasEst.final",
+            );
             task.evaluable.bytecode = await parseRainlang(
                 await getWithdrawEnsureRainlang(
                     signer.account.address,
@@ -330,7 +358,6 @@ export async function findOpp({
         );
     if (!opposingOrders || !opposingOrders.length) throw undefined;
 
-    const allErrorAttributes: string[] = [];
     const allNoneNodeErrors: (string | undefined)[] = [];
     const inputBalance = scale18(
         await viemClient.readContract({
@@ -367,10 +394,9 @@ export async function findOpp({
             });
         } catch (e: any) {
             allNoneNodeErrors.push(e?.value?.noneNodeError);
-            allErrorAttributes.push(JSON.stringify(e.spanAttributes));
+            extendSpanAttributes(spanAttributes, e.spanAttributes, "intraOrderbook." + i);
         }
     }
-    spanAttributes["intraOrderbook"] = allErrorAttributes;
     const noneNodeErrors = allNoneNodeErrors.filter((v) => !!v);
     if (allNoneNodeErrors.length && noneNodeErrors.length / allNoneNodeErrors.length > 0.5) {
         result.value = {

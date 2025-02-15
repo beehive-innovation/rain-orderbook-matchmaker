@@ -1,11 +1,11 @@
 import fs from "fs";
-import { deployerAbi } from "./abis";
+import { DeployerAbi } from "./abis";
 import { BigNumber, utils } from "ethers";
 import { Dispair, ViemClient } from "./types";
-import { parseAbi, PublicClient, stringToHex } from "viem";
+import { PublicClient, stringToHex } from "viem";
 import { MetaStore, RainDocument } from "@rainlanguage/dotrain";
 
-export const metaStore = new MetaStore(false);
+const metaStore = new MetaStore(false);
 export const TaskEntryPoint = ["main"] as const;
 export const EnsureBountyDotrain = fs.readFileSync("./tasks/ensure-bounty.rain", {
     encoding: "utf8",
@@ -91,7 +91,7 @@ export async function parseRainlang(
 ): Promise<string> {
     return await viemClient.readContract({
         address: dispair.deployer as `0x${string}`,
-        abi: parseAbi(deployerAbi),
+        abi: DeployerAbi,
         functionName: "parse2",
         args: [stringToHex(rainlang)],
     });

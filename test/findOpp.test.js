@@ -504,31 +504,28 @@ describe("Test find opp", async function () {
                 oppBlockNumber: undefined,
                 noneNodeError: errorSnapshot("", err),
                 spanAttributes: {
-                    routeProcessor: JSON.stringify({
-                        full: JSON.stringify({
-                            amountIn: formatUnits(vaultBalance),
-                            amountOut: formatUnits(getAmountOut(vaultBalance), 6),
-                            marketPrice: formatUnits(getCurrentPrice(vaultBalance)),
-                            route: expectedRouteVisual,
-                            blockNumber: oppBlockNumber,
-                            stage: 1,
-                            isNodeError: false,
-                            error: errorSnapshot("", err),
-                            rawtx: rawtx,
-                        }),
-                    }),
-                    interOrderbook: JSON.stringify({
-                        againstOrderbooks: JSON.stringify({
-                            [opposingOrderbookAddress]: {
-                                maxInput: vaultBalance.toString(),
-                                blockNumber: oppBlockNumber,
-                                stage: 1,
-                                isNodeError: false,
-                                error: errorSnapshot("", err),
-                                rawtx: JSON.stringify(rawtx2, withBigintSerializer),
-                            },
-                        }),
-                    }),
+                    // rp span attrs
+                    "routeProcessor.full.stage": 1,
+                    "routeProcessor.full.rawtx": rawtx,
+                    "routeProcessor.full.isNodeError": false,
+                    "routeProcessor.full.route": expectedRouteVisual,
+                    "routeProcessor.full.blockNumber": oppBlockNumber,
+                    "routeProcessor.full.error": errorSnapshot("", err),
+                    "routeProcessor.full.amountIn": formatUnits(vaultBalance),
+                    "routeProcessor.full.amountOut": formatUnits(getAmountOut(vaultBalance), 6),
+                    "routeProcessor.full.marketPrice": formatUnits(getCurrentPrice(vaultBalance)),
+
+                    // inter-ob span attrs
+                    [`interOrderbook.againstOrderbooks.${opposingOrderbookAddress}.stage`]: 1,
+                    [`interOrderbook.againstOrderbooks.${opposingOrderbookAddress}.isNodeError`]: false,
+                    [`interOrderbook.againstOrderbooks.${opposingOrderbookAddress}.blockNumber`]:
+                        oppBlockNumber,
+                    [`interOrderbook.againstOrderbooks.${opposingOrderbookAddress}.rawtx`]:
+                        JSON.stringify(rawtx2, withBigintSerializer),
+                    [`interOrderbook.againstOrderbooks.${opposingOrderbookAddress}.maxInput`]:
+                        vaultBalance.toString(),
+                    [`interOrderbook.againstOrderbooks.${opposingOrderbookAddress}.error`]:
+                        errorSnapshot("", err),
                 },
             };
             assert.deepEqual(error, expected);
