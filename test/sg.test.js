@@ -1,6 +1,7 @@
 const { assert } = require("chai");
 const { AxiosError } = require("axios");
 const { checkSgStatus, handleSgResults, getSgOrderbooks } = require("../src/sg");
+const { applyFilters } = require("../src/query");
 
 describe("Test read subgraph", async function () {
     it("should check subgraph status", async function () {
@@ -249,5 +250,62 @@ describe("Test read subgraph", async function () {
         const expected = [orderbook1, orderbook2];
         assert.deepEqual(result, expected);
         await mockServer.stop();
+    });
+
+    it("should test applying sg filters to new orders", async function () {
+        const filters = {
+            includeOrders: [`0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`],
+            excludeOrders: [`0x${"3".repeat(64)}`, `0x${"4".repeat(64)}`],
+            includeOwners: [`0x${"1".repeat(40)}`, `0x${"2".repeat(40)}`],
+            excludeOwners: [`0x${"3".repeat(40)}`, `0x${"4".repeat(40)}`],
+            includeOrderbooks: [`0x${"5".repeat(40)}`, `0x${"6".repeat(40)}`],
+            excludeOrderbooks: [`0x${"7".repeat(40)}`, `0x${"8".repeat(40)}`],
+        };
+        const newOrder = {
+            order: {
+                orderHash: `0x${"1".repeat(64)}`,
+                owner: `0x${"1".repeat(40)}`,
+                orderbook: {
+                    id: `0x${"7".repeat(40)}`,
+                },
+            },
+        };
+        assert(!applyFilters(newOrder, filters));
+
+        newOrder.order = {
+            orderHash: `0x${"1".repeat(64)}`,
+            owner: `0x${"3".repeat(40)}`,
+            orderbook: {
+                id: `0x${"6".repeat(40)}`,
+            },
+        };
+        assert(!applyFilters(newOrder, filters));
+
+        newOrder.order = {
+            orderHash: `0x${"3".repeat(64)}`,
+            owner: `0x${"2".repeat(40)}`,
+            orderbook: {
+                id: `0x${"5".repeat(40)}`,
+            },
+        };
+        assert(!applyFilters(newOrder, filters));
+
+        newOrder.order = {
+            orderHash: `0x${"1".repeat(64)}`,
+            owner: `0x${"2".repeat(40)}`,
+            orderbook: {
+                id: `0x${"5".repeat(40)}`,
+            },
+        };
+        assert(applyFilters(newOrder, filters));
+
+        newOrder.order = {
+            orderHash: `0x${"7".repeat(64)}`,
+            owner: `0x${"7".repeat(40)}`,
+            orderbook: {
+                id: `0x${"2".repeat(40)}`,
+            },
+        };
+        assert(!applyFilters(newOrder, filters));
     });
 });

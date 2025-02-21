@@ -49,12 +49,15 @@ export type CliOptions = {
     writeRpc?: string[];
     arbAddress: string;
     genericArbAddress?: string;
-    orderbookAddress?: string;
     subgraph: string[];
     lps?: string[];
     gasCoverage: string;
-    orderHash?: string;
-    orderOwner?: string;
+    includeOrders?: string[];
+    includeOwners?: string[];
+    excludeOrders?: string[];
+    excludeOwners?: string[];
+    includeOrderbooks: string[];
+    excludeOrderbooks: string[];
     sleep: number;
     maxRatio: boolean;
     timeout?: number;
@@ -308,9 +311,12 @@ export type OwnedOrder = {
 };
 
 export type SgFilter = {
-    orderHash?: string;
-    orderOwner?: string;
-    orderbook?: string;
+    includeOrders?: string[];
+    includeOwners?: string[];
+    excludeOrders?: string[];
+    excludeOwners?: string[];
+    includeOrderbooks: string[];
+    excludeOrderbooks: string[];
 };
 
 export type RpcRecord = {

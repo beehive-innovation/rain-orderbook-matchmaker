@@ -41,7 +41,6 @@ describe("Test cli", async function () {
         const options = {
             rpc: ["http://localhost:8080/rpc-url"],
             key: "0x" + "1".repeat(64),
-            orderbookAddress: "0x" + "0".repeat(40),
             arbAddress: "0x" + "0".repeat(40),
             maxRatio: true,
             subgraph: ["http://localhost:8080/sg-url"],
@@ -83,7 +82,20 @@ describe("Test cli", async function () {
         }
 
         try {
-            await startup(["", "", "-m", "some-mnemonic"]);
+            await startup(["", "", "-m", "some invalid mnemonic"]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = "provided mnemonic key is not valid";
+            assert.equal(error, expected);
+        }
+
+        try {
+            await startup([
+                "",
+                "",
+                "-m",
+                "test test test test test test test test test test test junk",
+            ]);
             assert.fail("expected to fail, but resolved");
         } catch (error) {
             const expected =
@@ -117,8 +129,6 @@ describe("Test cli", async function () {
                 "some-rpc",
                 "--arb-address",
                 `0x${"0".repeat(64)}`,
-                "--orderbook-address",
-                `0x${"0".repeat(64)}`,
                 "--sleep",
                 "abcd",
             ]);
@@ -137,8 +147,6 @@ describe("Test cli", async function () {
                 "--rpc",
                 "some-rpc",
                 "--arb-address",
-                `0x${"0".repeat(64)}`,
-                "--orderbook-address",
                 `0x${"0".repeat(64)}`,
                 "--pool-update-interval",
                 "abcd",
@@ -160,8 +168,6 @@ describe("Test cli", async function () {
                 "some-rpc",
                 "--arb-address",
                 `0x${"0".repeat(64)}`,
-                "--orderbook-address",
-                `0x${"0".repeat(64)}`,
                 "--pool-update-interval",
                 "10",
             ]);
@@ -181,8 +187,6 @@ describe("Test cli", async function () {
                 "--rpc",
                 "some-rpc",
                 "--arb-address",
-                `0x${"0".repeat(64)}`,
-                "--orderbook-address",
                 `0x${"0".repeat(64)}`,
                 "--pool-update-interval",
                 "10",
@@ -205,8 +209,6 @@ describe("Test cli", async function () {
                 "https://rpc.ankr.com/polygon",
                 "--arb-address",
                 `0x${"1".repeat(40)}`,
-                "--orderbook-address",
-                `0x${"2".repeat(40)}`,
                 "--pool-update-interval",
                 "10",
                 "--bot-min-balance",
@@ -220,6 +222,162 @@ describe("Test cli", async function () {
             assert.equal(error, expected);
         }
 
+        try {
+            await startup([
+                "",
+                "",
+                "--key",
+                `0x${"1".repeat(64)}`,
+                "--rpc",
+                "https://rpc.ankr.com/polygon",
+                "--arb-address",
+                `0x${"1".repeat(40)}`,
+                "--pool-update-interval",
+                "10",
+                "--bot-min-balance",
+                "12",
+                "--dispair",
+                "0x783b82f0fBF6743882072AE2393B108F5938898B",
+                "--include-orders",
+                `0x${"1".repeat(64)}`,
+                `0x${"2".repeat(40)}`,
+            ]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = `0x${"2".repeat(40)} is not a valid order hash`;
+            assert.equal(error, expected);
+        }
+
+        try {
+            await startup([
+                "",
+                "",
+                "--key",
+                `0x${"1".repeat(64)}`,
+                "--rpc",
+                "https://rpc.ankr.com/polygon",
+                "--arb-address",
+                `0x${"1".repeat(40)}`,
+                "--pool-update-interval",
+                "10",
+                "--bot-min-balance",
+                "12",
+                "--dispair",
+                "0x783b82f0fBF6743882072AE2393B108F5938898B",
+                "--exclude-orders",
+                `0x${"1".repeat(64)}`,
+                `0x${"2".repeat(40)}`,
+            ]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = `0x${"2".repeat(40)} is not a valid order hash`;
+            assert.equal(error, expected);
+        }
+
+        try {
+            await startup([
+                "",
+                "",
+                "--key",
+                `0x${"1".repeat(64)}`,
+                "--rpc",
+                "https://rpc.ankr.com/polygon",
+                "--arb-address",
+                `0x${"1".repeat(40)}`,
+                "--pool-update-interval",
+                "10",
+                "--bot-min-balance",
+                "12",
+                "--dispair",
+                "0x783b82f0fBF6743882072AE2393B108F5938898B",
+                "--include-owners",
+                `0x${"1".repeat(40)}`,
+                `0x${"2".repeat(64)}`,
+            ]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = `0x${"2".repeat(64)} is not a valid address`;
+            assert.equal(error, expected);
+        }
+
+        try {
+            await startup([
+                "",
+                "",
+                "--key",
+                `0x${"1".repeat(64)}`,
+                "--rpc",
+                "https://rpc.ankr.com/polygon",
+                "--arb-address",
+                `0x${"1".repeat(40)}`,
+                "--pool-update-interval",
+                "10",
+                "--bot-min-balance",
+                "12",
+                "--dispair",
+                "0x783b82f0fBF6743882072AE2393B108F5938898B",
+                "--exclude-owners",
+                `0x${"1".repeat(40)}`,
+                `0x${"2".repeat(64)}`,
+            ]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = `0x${"2".repeat(64)} is not a valid address`;
+            assert.equal(error, expected);
+        }
+
+        try {
+            await startup([
+                "",
+                "",
+                "--key",
+                `0x${"1".repeat(64)}`,
+                "--rpc",
+                "https://rpc.ankr.com/polygon",
+                "--arb-address",
+                `0x${"1".repeat(40)}`,
+                "--pool-update-interval",
+                "10",
+                "--bot-min-balance",
+                "12",
+                "--dispair",
+                "0x783b82f0fBF6743882072AE2393B108F5938898B",
+                "--include-orderbooks",
+                `0x${"1".repeat(40)}`,
+                `0x${"2".repeat(64)}`,
+            ]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = `0x${"2".repeat(64)} is not a valid address`;
+            assert.equal(error, expected);
+        }
+
+        try {
+            await startup([
+                "",
+                "",
+                "--key",
+                `0x${"1".repeat(64)}`,
+                "--rpc",
+                "https://rpc.ankr.com/polygon",
+                "--arb-address",
+                `0x${"1".repeat(40)}`,
+                "--pool-update-interval",
+                "10",
+                "--bot-min-balance",
+                "12",
+                "--dispair",
+                "0x783b82f0fBF6743882072AE2393B108F5938898B",
+                "--exclude-orderbooks",
+                `0x${"1".repeat(40)}`,
+                `0x${"2".repeat(64)}`,
+            ]);
+            assert.fail("expected to fail, but resolved");
+        } catch (error) {
+            const expected = `0x${"2".repeat(64)} is not a valid address`;
+            assert.equal(error, expected);
+        }
+
         const result = await startup([
             "",
             "",
@@ -229,8 +387,6 @@ describe("Test cli", async function () {
             "https://rpc.ankr.com/polygon",
             "--arb-address",
             `0x${"1".repeat(40)}`,
-            "--orderbook-address",
-            `0x${"2".repeat(40)}`,
             "--bot-min-balance",
             "0.123",
             "--gas-price-multiplier",
@@ -244,6 +400,24 @@ describe("Test cli", async function () {
             "--rp-only",
             "--dispair",
             deployer,
+            "--include-orders",
+            `0x${"1".repeat(64)}`,
+            `0x${"2".repeat(64)}`,
+            "--exclude-orders",
+            `0x${"3".repeat(64)}`,
+            `0x${"4".repeat(64)}`,
+            "--include-owners",
+            `0x${"1".repeat(40)}`,
+            `0x${"2".repeat(40)}`,
+            "--exclude-owners",
+            `0x${"3".repeat(40)}`,
+            `0x${"4".repeat(40)}`,
+            "--include-orderbooks",
+            `0x${"5".repeat(40)}`,
+            `0x${"6".repeat(40)}`,
+            "--exclude-orderbooks",
+            `0x${"7".repeat(40)}`,
+            `0x${"8".repeat(40)}`,
         ]);
         const expected = {
             roundGap: 10000,
@@ -251,7 +425,6 @@ describe("Test cli", async function () {
             config: {
                 chain: { id: 137 },
                 rpc: ["https://rpc.ankr.com/polygon"],
-                orderbookAddress: `0x${"2".repeat(40)}`,
                 arbAddress: `0x${"1".repeat(40)}`,
                 route: "single",
                 rpcRecords: {
@@ -281,6 +454,12 @@ describe("Test cli", async function () {
                 quoteGas: 7777n,
                 rpOnly: true,
                 dispair: deployer,
+                includeOrders: [`0x${"1".repeat(64)}`, `0x${"2".repeat(64)}`],
+                excludeOrders: [`0x${"3".repeat(64)}`, `0x${"4".repeat(64)}`],
+                includeOwners: [`0x${"1".repeat(40)}`, `0x${"2".repeat(40)}`],
+                excludeOwners: [`0x${"3".repeat(40)}`, `0x${"4".repeat(40)}`],
+                includeOrderbooks: [`0x${"5".repeat(40)}`, `0x${"6".repeat(40)}`],
+                excludeOrderbooks: [`0x${"7".repeat(40)}`, `0x${"8".repeat(40)}`],
             },
         };
         await sleep(1000);
@@ -304,5 +483,11 @@ describe("Test cli", async function () {
         assert.equal(result.config.rpOnly, expected.config.rpOnly);
         assert.deepEqual(result.options.dispair, expected.options.dispair);
         assert.deepEqual(result.config.dispair, expected.config.dispair);
+        assert.deepEqual(result.options.includeOrders, expected.options.includeOrders);
+        assert.deepEqual(result.options.excludeOrders, expected.options.excludeOrders);
+        assert.deepEqual(result.options.includeOwners, expected.options.includeOwners);
+        assert.deepEqual(result.options.excludeOwners, expected.options.excludeOwners);
+        assert.deepEqual(result.options.includeOrderbooks, expected.options.includeOrderbooks);
+        assert.deepEqual(result.options.excludeOrderbooks, expected.options.excludeOrderbooks);
     });
 });

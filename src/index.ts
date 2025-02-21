@@ -69,15 +69,7 @@ export async function getOrderDetails(
             ({ availableSgs } = checkSgStatus(validSgs, statusResult, span, hasjson));
 
             availableSgs.forEach((v) => {
-                if (v && typeof v === "string")
-                    promises.push(
-                        querySgOrders(
-                            v,
-                            sgFilters?.orderHash,
-                            sgFilters?.orderOwner,
-                            sgFilters?.orderbook,
-                        ),
-                    );
+                if (v && typeof v === "string") promises.push(querySgOrders(v, sgFilters));
             });
         }
 

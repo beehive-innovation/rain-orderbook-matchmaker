@@ -97,9 +97,12 @@ Other optional arguments are:
 - `--generic-arb-address`, Address of the deployed generic arb contract to perform inter-orderbook clears, Will override the 'GENERIC_ARB_ADDRESS' in env variables
 - `-l` or `--lps`, List of liquidity providers (dex) to use by the router as one quoted string seperated by a comma for each, example: 'SushiSwapV2,UniswapV3', Will override the 'LIQUIDITY_PROVIDERS' in env variables, if unset will use all available liquidty providers
 - `-g` or `--gas-coverage`, The percentage of gas to cover to be considered profitable for the transaction to be submitted, an integer greater than equal 0, default is 100 meaning full coverage, Will override the 'GAS_COVER' in env variables
-- `--orderbook-address`, Option to filter the subgraph query results with address of the deployed orderbook contract, Will override the 'ORDERBOOK_ADDRESS' in env variables
-- `--order-hash`, Option to filter the subgraph query results with a specific order hash, Will override the 'ORDER_HASH' in env variables
-- `--order-owner`, Option to filter the subgraph query results with a specific order owner address, Will override the 'ORDER_OWNER' in env variables
+- `--include-orders`, Option to only include the specified orders for processing, Will override the 'INCLUDE_ORDERS' in env variables
+- `--include-owners`, Option to only include the specified owners' orders for processing, Will override the 'INCLUDE_OWNERS' in env variables
+- `--include-orderbooks`, Option to only include the specified orderbooks for processing, Will override the 'INCLUDE_ORDERBOOKS' in env variables
+- `--exclude-orders`, Option to exclude the specified orders from processing, Will override the 'EXCLUDE_ORDERS' in env variables
+- `--exclude-owners`, Option to exclude the specified owners' orders from processing, Will override the 'EXCLUDE_OWNERS' in env variables
+- `--exclude-orderbooks`, Option to exclude the specified orderbooks from processing, Will override the 'EXCLUDE_ORDERBOOKS' in env variables
 - `--sleep`, Seconds to wait between each arb round, default is 10, Will override the 'SLEEP' in env variables
 - `--max-ratio`, Option to maximize maxIORatio, Will override the 'MAX_RATIO' in env variables
 - `--timeout`, Optional seconds to wait for the transaction to mine before disregarding it, Will override the 'TIMEOUT' in env variables
@@ -197,9 +200,6 @@ ARB_ADDRESS="0x123..."
 # generic arb contract address
 GENERIC_ARB_ADDRESS="0x123..."
 
-# Option to filter the subgraph query results with orderbook contract address
-ORDERBOOK_ADDRESS="0x123..."
-
 # one or more subgraph urls to read orders details from, can be used in combination with ORDERS
 # for more than 1 subgraphs, seperate them by comma and a space
 SUBGRAPH="https://api.thegraph.com/subgraphs/name/org1/sg1, https://api.thegraph.com/subgraphs/name/org2/sg2"
@@ -279,6 +279,14 @@ RP_ONLY="true"
 
 # Address of dispair (ExpressionDeployer contract) to use for tasks
 DISPAIR="address"
+
+# Filters for inc/exc orders, multiple items can be separated by a comma
+INCLUDE_ORDERS=
+INCLUDE_OWNERS=
+INCLUDE_ORDERBOOKS=
+EXCLUDE_ORDERS=
+EXCLUDE_OWNERS=
+EXCLUDE_ORDERBOOKS=
 ```
 If both env variables and CLI argument are set, the CLI arguments will be prioritized and override the env variables.
 

@@ -1,6 +1,7 @@
 import axios from "axios";
 import { errorSnapshot } from "./error";
 import { Span } from "@opentelemetry/api";
+import { SgFilter } from "./types";
 
 export type SgOrder = {
     id: string;
@@ -55,22 +56,29 @@ export type SgOtherEvent = {
 
 /**
  * Method to get the subgraph query body with optional filters
- * @param orderHash - The order hash to apply as filter
- * @param owner - The order owner to apply as filter
- * @param orderbook - The orderbook address
+ * @param skip - Number of results to skip
+ * @param filters - Applies the filters for query
  * @returns the query string
  */
-export function getQueryPaginated(
-    skip: number,
-    orderHash?: string,
-    owner?: string,
-    orderbook?: string,
-): string {
-    const ownerFilter = owner ? `, owner: "${owner.toLowerCase()}"` : "";
-    const orderHashFilter = orderHash ? `, orderHash: "${orderHash.toLowerCase()}"` : "";
-    const orderbookFilter = orderbook ? `, orderbook: "${orderbook.toLowerCase()}"` : "";
+export function getQueryPaginated(skip: number, filters?: SgFilter): string {
+    const getFilterVar = (header: string, f?: string[]) =>
+        f ? `${header}: [${f.map((v) => `"${v.toLowerCase()}"`).join(", ")}], ` : "";
+
+    const incOwnerFilter = getFilterVar("owner_in", filters?.includeOwners);
+    const exOwnerFilter = getFilterVar("owner_not_in", filters?.excludeOwners);
+    const incOrderFilter = getFilterVar("orderHash_in", filters?.includeOrders);
+    const exOrderFilter = getFilterVar("orderHash_not_in", filters?.excludeOrders);
+    const incOrderbookFilter = getFilterVar("orderbook_in", filters?.includeOrderbooks);
+    const exOrderbookFilter = getFilterVar("orderbook_not_in", filters?.excludeOrderbooks);
+
     return `{
-    orders(first: 100, skip: ${skip}, orderBy: timestampAdded, orderDirection: desc, where: {active: true${orderbookFilter}${orderHashFilter}${ownerFilter}}) {
+    orders(
+        first: 100,
+        skip: ${skip},
+        orderBy: timestampAdded,
+        orderDirection: desc,
+        where: {active: true${incOwnerFilter}${exOwnerFilter}${incOrderFilter}${exOrderFilter}${incOrderbookFilter}${exOrderbookFilter}}
+    ) {
         id
         owner
         orderHash
@@ -112,9 +120,7 @@ export function getQueryPaginated(
  */
 export async function querySgOrders(
     subgraph: string,
-    orderHash?: string,
-    owner?: string,
-    orderbook?: string,
+    filters?: SgFilter,
     timeout?: number,
 ): Promise<SgOrder[]> {
     const result: any[] = [];
@@ -123,7 +129,7 @@ export async function querySgOrders(
         const res = await axios.post(
             subgraph,
             {
-                query: getQueryPaginated(skip, orderHash, owner, orderbook),
+                query: getQueryPaginated(skip, filters),
             },
             { headers: { "Content-Type": "application/json" }, timeout },
         );
@@ -255,6 +261,7 @@ export async function getOrderChanges(
     startTimestamp: number,
     skip: number,
     span?: Span,
+    filters?: SgFilter,
 ) {
     let skip_ = skip;
     let count = 0;
@@ -291,10 +298,13 @@ export async function getOrderChanges(
                 if (event.__typename === "AddOrder") {
                     if (typeof event?.order?.active === "boolean" && event.order.active) {
                         if (!addOrders.find((e) => e.order.id === event.order.id)) {
-                            addOrders.push({
+                            const newOrder = {
                                 order: event.order as SgOrder,
                                 timestamp: Number(tx.timestamp),
-                            });
+                            };
+                            if (applyFilters(newOrder, filters)) {
+                                addOrders.push(newOrder);
+                            }
                         }
                     }
                 }
@@ -312,4 +322,50 @@ export async function getOrderChanges(
         }
     });
     return { addOrders, removeOrders, count };
+}
+
+/**
+ * Applies the filters to the given new added order queried from subgraph tx events
+ * @param order - The new added order
+ * @param filters - The subgraph filters
+ */
+export function applyFilters(order: NewSgOrder, filters?: SgFilter): boolean {
+    if (!filters) return true;
+    else {
+        // apply include filter
+        if (filters.includeOrderbooks) {
+            if (!filters.includeOrderbooks.includes(order.order.orderbook.id)) {
+                return false;
+            }
+        }
+        if (filters.includeOrders) {
+            if (!filters.includeOrders.includes(order.order.orderHash)) {
+                return false;
+            }
+        }
+        if (filters.includeOwners) {
+            if (!filters.includeOwners.includes(order.order.owner)) {
+                return false;
+            }
+        }
+
+        // apply exclude filters
+        if (filters.excludeOrderbooks) {
+            if (filters.excludeOrderbooks.includes(order.order.orderbook.id)) {
+                return false;
+            }
+        }
+        if (filters.excludeOrders) {
+            if (filters.excludeOrders.includes(order.order.orderHash)) {
+                return false;
+            }
+        }
+        if (filters.excludeOwners) {
+            if (filters.excludeOwners.includes(order.order.owner)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
