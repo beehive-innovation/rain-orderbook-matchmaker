@@ -265,6 +265,14 @@ export const processOrders = async (
                     }
                     span.setAttribute("severity", ErrorSeverity.MEDIUM);
                     span.setStatus({ code: SpanStatusCode.ERROR, message });
+                } else if (e.reason === ProcessPairHaltReason.FailedToUpdatePools) {
+                    let message = pair + ": failed to update pool details by event data";
+                    if (e.error) {
+                        message = errorSnapshot(message, e.error);
+                        span.recordException(e.error);
+                    }
+                    span.setAttribute("severity", ErrorSeverity.MEDIUM);
+                    span.setStatus({ code: SpanStatusCode.ERROR, message });
                 } else if (e.reason === ProcessPairHaltReason.FailedToGetEthPrice) {
                     // set OK status because a token might not have a pool and as a result eth price cannot
                     // be fetched for it and if it is set to ERROR it will constantly error on each round
@@ -464,6 +472,25 @@ export async function processPair(args: {
     });
 
     const gasPrice = BigNumber.from(state.gasPrice);
+
+    // update pools by events watching until current block
+    try {
+        if (dataFetcher.fetchedPairPools?.length) {
+            let blockNumber;
+            if (isE2eTest && (config as any).testBlockNumberTemp) {
+                (config as any).testBlockNumberTemp += 10n;
+                blockNumber = (config as any).testBlockNumberTemp;
+            }
+            await dataFetcher.updatePools(blockNumber);
+        }
+    } catch (e) {
+        result.reason = ProcessPairHaltReason.FailedToUpdatePools;
+        result.error = e;
+        return async () => {
+            throw result;
+        };
+    }
+
     // get pool details
     if (
         !dataFetcher.fetchedPairPools.includes(pair) ||

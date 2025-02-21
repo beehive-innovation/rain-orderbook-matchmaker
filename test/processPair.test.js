@@ -71,6 +71,7 @@ describe("Test process pair", async function () {
         dataFetcher = {
             fetchPoolsForToken: async () => {},
             fetchedPairPools: [],
+            updatePools: async () => {},
         };
         // 0xe0e530b7
         viemClient = {

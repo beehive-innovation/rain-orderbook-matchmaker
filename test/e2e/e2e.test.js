@@ -232,6 +232,7 @@ for (let i = 0; i < testData.length; i++) {
                 config.arbAddress = arb.address;
                 config.orderbookAddress = orderbook.address;
                 config.testBlockNumber = BigInt(blockNumber);
+                config.testBlockNumberTemp = BigInt(blockNumber);
                 config.gasCoveragePercentage = "1";
                 config.viemClient = viemClient;
                 config.dataFetcher = dataFetcher;

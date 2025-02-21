@@ -1,6 +1,7 @@
-[submodule "lib/sushiswap"]
-	path = lib/sushiswap
-	url = https://github.com/rainlanguage/sushiswap.git
 [submodule "lib/forge-std"]
 	path = lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "lib/sushiswap"]
+	path = lib/sushiswap
+	url = https://github.com/rainlanguage/sushiswap.git
+	branch = rain-fork

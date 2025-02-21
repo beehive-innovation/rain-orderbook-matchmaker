@@ -2,7 +2,7 @@ import { getSgOrderbooks } from "./sg";
 import { sendTransaction } from "./tx";
 import { WNATIVE } from "sushi/currency";
 import { ChainId, ChainKey } from "sushi/chain";
-import { DataFetcher, LiquidityProviders } from "sushi/router";
+import { RainDataFetcher, LiquidityProviders } from "sushi/router";
 import {
     BotConfig,
     RpcRecord,
@@ -206,7 +206,7 @@ export async function getDataFetcher(
     useFallbacks = false,
 ): Promise<BotDataFetcher> {
     try {
-        const dataFetcher = new DataFetcher(
+        const dataFetcher = new RainDataFetcher(
             configOrViemClient.chain!.id as ChainId,
             "transport" in configOrViemClient
                 ? (configOrViemClient as PublicClient)

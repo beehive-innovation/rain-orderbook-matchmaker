@@ -24,6 +24,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ssh-key: ${{ secrets.PUBLISHER_SSH_KEY }}
+          submodules: recursive
+          fetch-depth: 0
 
       # Install nix
       - uses: DeterminateSystems/nix-installer-action@v4

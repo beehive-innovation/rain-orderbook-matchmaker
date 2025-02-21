@@ -77,7 +77,15 @@ export function getQueryPaginated(skip: number, filters?: SgFilter): string {
         skip: ${skip},
         orderBy: timestampAdded,
         orderDirection: desc,
-        where: {active: true${incOwnerFilter}${exOwnerFilter}${incOrderFilter}${exOrderFilter}${incOrderbookFilter}${exOrderbookFilter}}
+        where: {
+            ${incOwnerFilter}
+            ${exOwnerFilter}
+            ${incOrderFilter}
+            ${exOrderFilter}
+            ${incOrderbookFilter}
+            ${exOrderbookFilter}
+            active: true
+        }
     ) {
         id
         owner
